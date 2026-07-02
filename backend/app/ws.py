@@ -113,7 +113,7 @@ async def control(
                     db.add(Message(interview_id=iid, role="candidate", text=candidate_text, ts=datetime.utcnow()))
 
                 state = record_turn(state, "candidate", candidate_text)
-                state = advance(state, elapsed)
+                state = advance(state, elapsed, candidate_text)  # pass text for blank-detection
                 iv.state_json = json.dumps(state)
                 db.commit()
 
@@ -143,21 +143,33 @@ async def control(
 
                 try:
                     ai_text = await generate_chat_response_groq(chat_history)
+                    # Strip the sentinel token from the spoken text before TTS
+                    spoken_text = ai_text.replace("[INTERVIEW_COMPLETE]", "").strip()
                     # 3. Generate TTS
-                    ai_audio_bytes = await synthesize_speech_groq(ai_text)
+                    ai_audio_bytes = await synthesize_speech_groq(spoken_text if spoken_text else "Thank you for your time. The interview is now complete.")
                     
                     if iv.save_transcript:
-                        db.add(Message(interview_id=iid, role="interviewer", text=ai_text, ts=datetime.utcnow()))
+                        db.add(Message(interview_id=iid, role="interviewer", text=spoken_text, ts=datetime.utcnow()))
                     
-                    state = record_turn(state, "interviewer", ai_text)
+                    state = record_turn(state, "interviewer", spoken_text)
                     iv.state_json = json.dumps(state)
                     db.commit()
 
                     await ws.send_text(json.dumps({
                         "type": "ai_response",
-                        "text": ai_text,
+                        "text": spoken_text,
                         "audio_b64": base64.b64encode(ai_audio_bytes).decode("utf-8")
                     }))
+
+                    # --- Auto-end detection ---
+                    # End if the state engine forced it OR the LLM included the sentinel
+                    if state.get("next_move") == "force_end" or "[INTERVIEW_COMPLETE]" in ai_text:
+                        # Auto-complete server-side
+                        from .routes import _auto_complete_interview
+                        await _auto_complete_interview(iid, db)
+                        await ws.send_text(json.dumps({"type": "interview_ended"}))
+                        break  # exit the while loop; WebSocket will close naturally
+
                 except Exception as e:
                     print(f"[ws] LLM/TTS error: {e}")
                     await ws.send_text(json.dumps({"type": "error", "message": "Failed to generate AI response"}))

@@ -50,9 +50,13 @@ async def generate_report(transcript: str, jd_skills: list) -> Rubric:
     sys = (
         "You are an expert, highly objective senior engineering hiring manager. Your task is to evaluate a candidate based on an interview transcript. "
         "You must generate a comprehensive, high-quality, and constructive feedback report.\n\n"
+        "CRITICAL LANGUAGE RULE: You MUST write the ENTIRE report in ENGLISH ONLY. "
+        "If the transcript contains text in any other language (Hindi, Spanish, etc.), DO NOT quote it verbatim. "
+        "Instead, describe what happened professionally in English — e.g., 'Candidate responded in a non-English language, which was off-topic and did not address the question.' "
+        "Never include non-English characters or words anywhere in your output.\n\n"
         "For EACH dimension:\n"
-        "1. Provide a thoughtful analysis of the candidate's performance.\n"
-        "2. Quote concrete evidence directly from the transcript.\n"
+        "1. Provide a thoughtful analysis of the candidate's performance in English.\n"
+        "2. Cite evidence from the transcript — but always paraphrase or translate it into English. NEVER quote non-English text.\n"
         "3. Assign a strict level: 'Below', 'Meets', or 'Exceeds'.\n"
         "4. Assign a strict numeric score_out_of_10 (0-10 integer).\n"
         "5. Describe exactly what a 'strong_answer' (an ideal response) would have looked like for the questions asked.\n\n"
@@ -62,7 +66,7 @@ async def generate_report(transcript: str, jd_skills: list) -> Rubric:
         "{ \"overall_score_out_of_100\": 85, \"dimensions\": [{ \"name\": \"...\", \"score_out_of_10\": 8, \"level\": \"...\", \"evidence\": \"...\", \"strong_answer\": \"...\" }], "
         "\"jd_match_summary\": \"A detailed paragraph summarizing how well the candidate matched the specific job requirements.\", "
         "\"strengths\": [\"string\", \"string\"], \"weaknesses\": [\"string\", \"string\"] }\n\n"
-        "NOTE: 'strong_answer' MUST be a highly detailed string describing an ideal answer. NEVER use booleans."
+        "NOTE: 'strong_answer' MUST be a highly detailed string describing an ideal answer. NEVER use booleans. ALL TEXT IN THE ENTIRE JSON MUST BE IN ENGLISH."
     )
     user = f"JD skills: {jd_skills}\n\nTRANSCRIPT:\n{transcript[:12000]}"
     out = await _chat(

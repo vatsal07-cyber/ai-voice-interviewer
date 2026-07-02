@@ -29,18 +29,29 @@ export default function Report() {
 
   // A very basic markdown renderer for the premium typography styling
   const renderMarkdownText = (text: string) => {
-    return text.split("\n").map((line, i) => {
+    // Pre-process: strip the **Evidence:** and **Ideal Answer:** prefixes the LLM generates
+    const cleanLine = (line: string) =>
+      line
+        .replace(/\*\*Evidence:\*\*\s*/gi, "")
+        .replace(/\*\*Ideal Answer:\*\*\s*/gi, "")
+        .replace(/\*\*Strong Answer:\*\*\s*/gi, "");
+
+    const applyBold = (s: string) =>
+      s.replace(/\*\*(.*?)\*\*/g, '<strong class="text-zinc-100 font-semibold">$1</strong>');
+
+    return text.split("\n").map((rawLine, i) => {
+      const line = cleanLine(rawLine);
       if (line.startsWith("### ")) return <h3 key={i} className="text-xl font-bold mt-8 mb-4 text-zinc-100">{line.replace("### ", "")}</h3>;
       if (line.startsWith("## ")) return <h2 key={i} className="text-2xl font-bold mt-10 mb-5 text-zinc-100 border-b border-white/10 pb-2">{line.replace("## ", "")}</h2>;
       if (line.startsWith("# ")) return <h1 key={i} className="text-3xl font-extrabold mt-12 mb-6 text-zinc-100">{line.replace("# ", "")}</h1>;
-      if (line.startsWith("- ")) return <li key={i} className="ml-6 mb-2 list-disc text-zinc-300 leading-relaxed">{line.replace("- ", "").replace(/\*\*(.*?)\*\*/g, '<strong class="text-zinc-100 font-semibold">$1</strong>')}</li>;
-      if (line.trim() === "") return <div key={i} className="h-4"></div>;
-      
+      if (line.startsWith("- ")) return <li key={i} className="ml-6 mb-2 list-disc text-zinc-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: applyBold(line.replace("- ", "")) }} />;
+      if (line.trim() === "") return <div key={i} className="h-4" />;
+
       // Bold text handling for paragraphs
-      const formattedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong class="text-zinc-100 font-semibold">$1</strong>');
-      return <p key={i} className="mb-4 text-zinc-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: formattedLine }} />;
+      return <p key={i} className="mb-4 text-zinc-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: applyBold(line) }} />;
     });
   };
+
 
   return (
     <PageWrapper className="container mx-auto max-w-4xl">

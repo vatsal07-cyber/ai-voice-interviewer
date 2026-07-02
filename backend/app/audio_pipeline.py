@@ -20,7 +20,8 @@ async def transcribe_audio_groq(audio_bytes: bytes, filename="audio.webm") -> st
     }
     data = {
         "model": settings.model,
-        "response_format": "json"
+        "response_format": "json",
+        "language": "en",  # Force English transcription; non-English speech will be translated
     }
     
     async with httpx.AsyncClient(timeout=30) as client:

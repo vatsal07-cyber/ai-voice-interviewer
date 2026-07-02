@@ -1,5 +1,7 @@
 // Voice Activity Detection (VAD) based AudioRecorder
 // Uses Web Audio API to detect silence after speech, then auto-stops.
+import type { MutableRefObject } from "react";
+
 export class AudioRecorder {
   private stream: MediaStream | null = null;
   private mediaRecorder: MediaRecorder | null = null;
@@ -156,11 +158,19 @@ export class AudioRecorder {
   }
 }
 
-export function playAudioBase64(base64: string): Promise<void> {
+export function playAudioBase64(
+  base64: string,
+  audioRef?: MutableRefObject<HTMLAudioElement | null>
+): Promise<void> {
   return new Promise((resolve) => {
     const audio = new Audio("data:audio/mp3;base64," + base64);
-    audio.onended = () => resolve();
-    audio.onerror = () => resolve();
-    audio.play().catch(() => resolve());
+    if (audioRef) audioRef.current = audio;
+    const cleanup = () => {
+      if (audioRef) audioRef.current = null;
+      resolve();
+    };
+    audio.onended = cleanup;
+    audio.onerror = cleanup;
+    audio.play().catch(cleanup);
   });
 }

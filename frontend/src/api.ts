@@ -13,7 +13,20 @@ async function req(path: string, opts: RequestInit = {}) {
       ...(opts.headers || {}),
     },
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    // FastAPI validation errors return detail as an array of {loc, msg, type}
+    const detail = body.detail;
+    let message: string;
+    if (Array.isArray(detail)) {
+      message = detail.map((e: any) => e.msg || JSON.stringify(e)).join("; ");
+    } else if (typeof detail === "string") {
+      message = detail;
+    } else {
+      message = res.statusText || "Request failed";
+    }
+    throw new Error(message);
+  }
   return res.json();
 }
 

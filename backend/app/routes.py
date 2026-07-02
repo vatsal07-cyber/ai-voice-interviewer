@@ -100,11 +100,40 @@ def _interviewer_instructions(iv: Interview, skills) -> str:
         "If they go off-topic again, move to the next requirement.\n\n"
         "RULE 9: NEVER fabricate facts about the company or role.\n\n"
         "RULE 10: End the interview after all requirements are covered or when time runs out.\n\n"
+        "RULE 11 — 3-STRIKES RULE: If the candidate has been unable to provide a meaningful answer to THREE consecutive questions "
+        "(very short, blank, or completely off-topic responses), you MUST close the interview immediately. "
+        "Say: 'Thank you for your time. Unfortunately, we were unable to complete enough of the assessment today.' "
+        "Then append exactly: [INTERVIEW_COMPLETE]\n\n"
+        "RULE 12 — CANDIDATE REQUESTS TO END: If the candidate explicitly asks to end, stop, or finish the interview "
+        "(e.g., 'I want to stop', 'end the interview', 'I'm done'), you MUST comply immediately. "
+        "Say: 'Of course, thank you for your time today. The interview is now concluded.' "
+        "Then append exactly: [INTERVIEW_COMPLETE]\n\n"
         "=== BEHAVIOR ===\n"
         "- Start by introducing yourself briefly (1 sentence), then immediately ask the FIRST technical question targeting the first requirement.\n"
         "- Keep all your replies short and direct (1-3 sentences max).\n"
         "- Maintain a highly professional, focused, and objective tone.\n"
     )
+
+
+async def _auto_complete_interview(iid: str, db) -> None:
+    """Internal helper called by ws.py to complete an interview without an HTTP request."""
+    from .models import Report as ReportModel
+    iv = db.query(Interview).filter(Interview.id == iid).first()
+    if not iv or iv.status == "completed":
+        return
+    msgs = db.query(Message).filter(Message.interview_id == iid).order_by(Message.ts).all()
+    transcript = "\n".join(f"{m.role}: {m.text}" for m in msgs)
+    state = json.loads(iv.state_json or "{}")
+    try:
+        rubric = await llm.generate_report(transcript, state.get("jd_skills", []))
+        md = llm.render_report_md(rubric)
+        rep = ReportModel(interview_id=iid, rubric_json=rubric.model_dump_json(), report_md=md)
+        db.add(rep)
+    except Exception as e:
+        print(f"[auto_complete] Report generation failed: {e}")
+    iv.status = "completed"
+    iv.ended_at = datetime.utcnow()
+    db.commit()
 
 @router.post("/interviews/{iid}/complete")
 async def complete(iid: str, user: User = Depends(current_user),

@@ -24,6 +24,7 @@ export default function LiveInterview() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null); // track playing audio so we can stop it
   const startedAt = useRef<number>(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const cancelledRef = useRef(false);
@@ -78,14 +79,27 @@ export default function LiveInterview() {
           const data = JSON.parse(e.data);
           if (data.type === "error") {
             onError(data.message);
+          } else if (data.type === "interview_ended") {
+            // Backend auto-completed the interview (3 strikes or user request)
+            cancelledRef.current = true;
+            if (activeAudioRef.current) {
+              activeAudioRef.current.pause();
+              activeAudioRef.current.src = "";
+              activeAudioRef.current = null;
+            }
+            if (recorderRef.current) recorderRef.current.cancel();
+            setUiState("ended");
+            // Short delay so the last AI audio can finish playing before nav
+            setTimeout(() => nav(`/report/${id}`), 3500);
           } else if (data.type === "state") {
             if (data.candidate_text) {
               setTranscript((t) => [...t, { role: "candidate", text: data.candidate_text }]);
             }
           } else if (data.type === "ai_response") {
             setTranscript((t) => [...t, { role: "interviewer", text: data.text }]);
+            if (cancelledRef.current) return; // session ended mid-flight
             setUiState("speaking");
-            await playAudioBase64(data.audio_b64);
+            await playAudioBase64(data.audio_b64, activeAudioRef);
             // After the AI finishes speaking, auto-start listening
             if (!cancelledRef.current) {
               startListening();
@@ -95,10 +109,6 @@ export default function LiveInterview() {
           console.error("WS parse error", err);
         }
       };
-
-      ws.onerror = () => {
-        if (!cancelledRef.current) onError("Control channel disconnected.");
-      };
     } catch (err: any) {
       if (!cancelledRef.current) onError(err.message || "Failed to start session.");
     }
@@ -106,6 +116,12 @@ export default function LiveInterview() {
     return () => {
       cancelledRef.current = true;
       if (volumeInterval) clearInterval(volumeInterval);
+      // Stop any audio that is still playing when component unmounts
+      if (activeAudioRef.current) {
+        activeAudioRef.current.pause();
+        activeAudioRef.current.src = "";
+        activeAudioRef.current = null;
+      }
       if (wsRef.current) wsRef.current.close();
       if (recorderRef.current) recorderRef.current.cancel();
     };
@@ -120,20 +136,25 @@ export default function LiveInterview() {
     return () => clearInterval(interval);
   }, [uiState]);
 
-  // Auto-scroll transcript
+  // Auto-scroll transcript — scroll the container, not the whole page
   useEffect(() => {
-    if (scrollRef.current) {
-      setTimeout(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-      }, 50);
-    }
+    const el = scrollRef.current;
+    if (!el) return;
+    const raf = requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(raf);
   }, [transcript]);
 
   const endSession = async () => {
     if (!confirm("End the interview now?")) return;
     cancelledRef.current = true;
+    // Stop any audio that is currently playing
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current.src = "";
+      activeAudioRef.current = null;
+    }
     if (recorderRef.current) recorderRef.current.cancel();
     if (wsRef.current) wsRef.current.close();
     setUiState("ended");
