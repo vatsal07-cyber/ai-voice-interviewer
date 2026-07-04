@@ -27,9 +27,7 @@ export default function Report() {
     })();
   }, [id]);
 
-  // A very basic markdown renderer for the premium typography styling
   const renderMarkdownText = (text: string) => {
-    // Pre-process: strip the **Evidence:** and **Ideal Answer:** prefixes the LLM generates
     const cleanLine = (line: string) =>
       line
         .replace(/\*\*Evidence:\*\*\s*/gi, "")
@@ -39,15 +37,70 @@ export default function Report() {
     const applyBold = (s: string) =>
       s.replace(/\*\*(.*?)\*\*/g, '<strong class="text-zinc-100 font-semibold">$1</strong>');
 
+    // Track whether we are inside the study guide section
+    let inStudyGuide = false;
+
     return text.split("\n").map((rawLine, i) => {
       const line = cleanLine(rawLine);
+
+      // Detect start of study guide
+      if (line.startsWith("## ") && (line.includes("Study Guide") || line.includes("📚"))) {
+        inStudyGuide = true;
+        return (
+          <div key={i} className="mt-10 mb-4 flex items-center gap-3">
+            <span className="text-2xl">📚</span>
+            <h2 className="text-2xl font-bold text-amber-400">
+              {line.replace("## ", "").replace("📚", "").trim()}
+            </h2>
+          </div>
+        );
+      }
+
+      // Reset on a new top-level heading
+      if (line.startsWith("## ") && inStudyGuide) inStudyGuide = false;
+
+      // Blockquote for the intro line inside study guide
+      if (line.startsWith("> ") && inStudyGuide) {
+        return (
+          <p key={i} className="mb-4 text-amber-300/80 text-sm italic border-l-2 border-amber-400/40 pl-4">
+            {line.replace("> ", "")}
+          </p>
+        );
+      }
+
+      if (line.startsWith("### ") && inStudyGuide) {
+        return (
+          <div key={i} className="mt-6 mb-2 flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-400/20 text-amber-300 text-xs font-bold border border-amber-400/30">
+              {line.match(/^### (\d+)\./)?.[1] ?? "#"}
+            </span>
+            <h3 className="text-lg font-bold text-amber-200">
+              {line.replace(/^### \d+\.\s*/, "")}
+            </h3>
+          </div>
+        );
+      }
+
       if (line.startsWith("### ")) return <h3 key={i} className="text-xl font-bold mt-8 mb-4 text-zinc-100">{line.replace("### ", "")}</h3>;
       if (line.startsWith("## ")) return <h2 key={i} className="text-2xl font-bold mt-10 mb-5 text-zinc-100 border-b border-white/10 pb-2">{line.replace("## ", "")}</h2>;
       if (line.startsWith("# ")) return <h1 key={i} className="text-3xl font-extrabold mt-12 mb-6 text-zinc-100">{line.replace("# ", "")}</h1>;
+
+      if (line.startsWith("- ") && inStudyGuide) {
+        return (
+          <li key={i} className="ml-6 mb-1.5 list-none flex items-start gap-2 text-amber-100/80 text-sm">
+            <span className="mt-1 text-amber-400">→</span>
+            <span dangerouslySetInnerHTML={{ __html: applyBold(line.replace("- ", "")) }} />
+          </li>
+        );
+      }
+
       if (line.startsWith("- ")) return <li key={i} className="ml-6 mb-2 list-disc text-zinc-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: applyBold(line.replace("- ", "")) }} />;
       if (line.trim() === "") return <div key={i} className="h-4" />;
 
-      // Bold text handling for paragraphs
+      if (inStudyGuide) {
+        return <p key={i} className="mb-2 text-amber-100/70 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: applyBold(line) }} />;
+      }
+
       return <p key={i} className="mb-4 text-zinc-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: applyBold(line) }} />;
     });
   };

@@ -4,7 +4,7 @@ import json
 import httpx
 from typing import List
 from .config import settings
-from .schemas import Rubric, RubricDimension
+from .schemas import Rubric, RubricDimension, StudyTopic
 
 CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -150,12 +150,19 @@ async def generate_report(
         "  - level: 'Below', 'Meets', or 'Exceeds'\n"
         "  - evidence: quote or paraphrase from the transcript that justifies the score\n"
         "  - strong_answer: what an ideal response to the questions asked would have looked like\n\n"
+        "\n6. STUDY PLAN — Generate 2-5 targeted study topics based ONLY on the weak areas identified in the transcript. "
+        "For each topic include:\n"
+        "  - topic: the specific skill or concept\n"
+        "  - why: one sentence explaining why the candidate needs to improve here, with evidence from the interview\n"
+        "  - resources: a list of 2-3 concrete, specific resources (e.g. 'MDN Web Docs: Promises and async/await', "
+        "'LeetCode: Binary Search problems', 'Book: Designing Data-Intensive Applications Ch.3')\n\n"
         "Return a JSON object with exactly these keys:\n"
         "{ \"overall_score_out_of_100\": <int>, "
         "\"dimensions\": [...], "
         "\"jd_match_summary\": \"<paragraph>\", "
         "\"strengths\": [\"<string>\", ...], "
-        "\"weaknesses\": [\"<string>\", ...] }\n\n"
+        "\"weaknesses\": [\"<string>\", ...], "
+        "\"study_plan\": [{\"topic\": \"...\", \"why\": \"...\", \"resources\": [\"...\", \"...\"]}, ...] }\n\n"
         "ALL text must be in English. The 'strong_answer' field must always be a string, never a boolean."
     )
     user = f"JD required skills: {jd_skills}\n\nTRANSCRIPT:\n{transcript[:12000]}"
@@ -169,6 +176,17 @@ async def generate_report(
         for dim in data.get("dimensions", []):
             if not isinstance(dim.get("strong_answer"), str):
                 dim["strong_answer"] = str(dim.get("strong_answer", ""))
+        # Parse study_plan safely
+        raw_study_plan = data.get("study_plan", [])
+        study_plan = []
+        for item in raw_study_plan:
+            if isinstance(item, dict):
+                study_plan.append(StudyTopic(
+                    topic=str(item.get("topic", "")),
+                    why=str(item.get("why", "")),
+                    resources=[str(r) for r in item.get("resources", []) if r],
+                ))
+
         return Rubric(
             is_complete=True,
             overall_score_out_of_100=data.get("overall_score_out_of_100", 0),
@@ -176,6 +194,7 @@ async def generate_report(
             jd_match_summary=data.get("jd_match_summary", ""),
             strengths=data.get("strengths", []),
             weaknesses=data.get("weaknesses", []),
+            study_plan=study_plan,
         )
     except Exception as e:
         print(f"[llm] Report parsing failed: {e}. Output was: {out}")
@@ -231,4 +250,20 @@ def render_report_md(rubric: Rubric) -> str:
     lines.append("")
     lines.append("## Areas for Improvement")
     lines += [f"- {w}" for w in rubric.weaknesses] or ["- No specific weaknesses recorded."]
+
+    if rubric.study_plan:
+        lines.append("")
+        lines.append("## 📚 Personalised Study Guide")
+        lines.append("")
+        lines.append("> Based on your performance in this interview, here are targeted topics to focus on:")
+        lines.append("")
+        for idx, topic in enumerate(rubric.study_plan, 1):
+            lines.append(f"### {idx}. {topic.topic}")
+            lines.append(f"**Why:** {topic.why}")
+            lines.append("")
+            lines.append("**Resources to study:**")
+            for resource in topic.resources:
+                lines.append(f"- {resource}")
+            lines.append("")
+
     return "\n".join(lines)

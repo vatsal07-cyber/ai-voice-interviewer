@@ -26,6 +26,11 @@ class InterviewOut(BaseModel):
     difficulty: str
     created_at: str
 
+class StudyTopic(BaseModel):
+    topic: str              # The specific skill or concept to study
+    why: str                # Why this is important based on the interview performance
+    resources: List[str]    # Concrete resources: docs, book chapters, practice problems
+
 class RubricDimension(BaseModel):
     name: str
     score_out_of_10: int
@@ -41,3 +46,4 @@ class Rubric(BaseModel):
     jd_match_summary: str
     strengths: List[str]
     weaknesses: List[str]
+    study_plan: List[StudyTopic] = []          # Personalised study guide based on weak areas

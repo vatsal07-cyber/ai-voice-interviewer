@@ -206,7 +206,7 @@ export default function LiveInterview() {
   const isActiveState = uiState !== "connecting" && uiState !== "ended";
 
   return (
-    <PageWrapper className="container mx-auto max-w-4xl flex flex-col h-full max-h-[calc(100vh-3.5rem)] pb-4">
+    <PageWrapper className="container mx-auto max-w-4xl flex flex-col" style={{ height: 'calc(100vh - 3.5rem)', paddingBottom: '1rem' }}>
 
       {/* Sticky Header */}
       <Card className="glass-card mb-6 flex-shrink-0 z-10 sticky top-0">
@@ -255,8 +255,8 @@ export default function LiveInterview() {
         </div>
       </Card>
 
-      {/* Main Chat Area */}
-      <div className="flex-1 overflow-hidden relative rounded-xl border border-white/5 bg-zinc-900/30">
+      {/* Main Chat Area — independently scrollable */}
+      <div className="flex-1 min-h-0 relative rounded-xl border border-white/5 bg-zinc-900/30 flex flex-col">
 
         {err && (
           <div className="absolute top-4 left-4 right-4 z-20">
@@ -273,8 +273,8 @@ export default function LiveInterview() {
           </div>
         )}
 
-        {/* Chat Transcript */}
-        <div ref={scrollRef} className="h-full overflow-y-auto p-6 space-y-6 scroll-smooth pb-36">
+        {/* Chat Transcript — scrolls independently */}
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 pb-36">
           {transcript.length === 0 && uiState === "idle" && (
             <div className="flex flex-col items-center justify-center h-full text-zinc-500 opacity-60">
               <Activity size={48} className="mb-4 text-zinc-700" />
