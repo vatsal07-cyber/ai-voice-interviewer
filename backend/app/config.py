@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # --- core ---
     app_secret: str = "change-me"           # signs session tokens
     database_url: str                       # REQUIRED — must be set in .env as DATABASE_URL
-    frontend_origin: str = os.getenv("FRONTEND_ORIGIN") | "http://localhost:5173"
+    frontend_origin: str = os.getenv("FRONTEND_ORIGIN") or "http://localhost:5173"
 
     # --- groq (STT, LLM, TTS) ---
     groq_api_key: str = ""
