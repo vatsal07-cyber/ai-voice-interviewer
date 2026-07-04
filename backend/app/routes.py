@@ -35,7 +35,6 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email).first()
     if not user:
         raise HTTPException(401, "Invalid email or password.")
-    # Support legacy accounts without passwords: reject if no password set
     if not user.hashed_password:
         raise HTTPException(401, "This account has no password set. Please sign up again.")
     if not verify_password(body.password, user.hashed_password):
@@ -47,13 +46,11 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
 async def create_interview(body: CreateInterviewIn, user: User = Depends(current_user),
                            db: Session = Depends(get_db)):
     today = datetime.utcnow().date()
-    # per-user daily rate limit
     user_today = db.query(func.count(Interview.id)).filter(
         Interview.user_id == user.id,
         func.date(Interview.created_at) == today).scalar()
     if user_today >= settings.max_interviews_per_user_per_day:
         raise HTTPException(429, "Daily interview limit reached. Try again tomorrow.")
-    # global spend kill-switch
     global_today = db.query(func.count(Interview.id)).filter(
         func.date(Interview.created_at) == today).scalar()
     if global_today >= settings.global_daily_session_budget:
@@ -61,57 +58,103 @@ async def create_interview(body: CreateInterviewIn, user: User = Depends(current
 
     extraction = await llm.extract_skills(body.jd_text)
     skills = extraction.get("skills", [])
-    title = extraction.get("title", "Technical Interview")
-    
+    title = extraction.get("title", "Interview")
+    role_category = extraction.get("role_category", "technical")
+
     iv = Interview(user_id=user.id, jd_text=body.jd_text,
                    duration_min=body.duration_min, difficulty=body.difficulty,
                    save_transcript=body.save_transcript)
     db.add(iv); db.commit(); db.refresh(iv)
-    state = new_state(iv.id, iv.duration_min, iv.difficulty, skills, title)
+    state = new_state(iv.id, iv.duration_min, iv.difficulty, skills, title, role_category)
     iv.state_json = json.dumps(state); db.commit()
     return {"id": iv.id, "jd_skills": skills, "title": title}
 
-def _interviewer_instructions(iv: Interview, skills) -> str:
-    skills_list = ", ".join(skills) if skills else "general technical skills"
+
+def _interviewer_instructions(iv: Interview, skills: list, role_category: str = "technical") -> str:
+    """
+    Build the system prompt for the interviewer LLM.
+    The persona and question framing adapt to the role_category derived from the JD.
+    No system design, architecture, or engineering assumptions are made by default.
+    """
+    skills_list = ", ".join(skills) if skills else "the requirements listed in the job description"
+
+    # Role-specific persona and question guidance
+    persona_map = {
+        "technical": (
+            "You are a professional technical interviewer. "
+            "You assess candidates on their practical knowledge of specific technologies, "
+            "tools, and concepts directly mentioned in the job description."
+        ),
+        "analytical": (
+            "You are a professional analytical interviewer. "
+            "You assess candidates on their data analysis skills, quantitative reasoning, "
+            "and domain-specific tools listed in the job description."
+        ),
+        "non-technical": (
+            "You are a professional interviewer for a non-technical role. "
+            "You assess candidates on their domain knowledge, communication skills, "
+            "behavioural competencies, and role-specific experience from the job description."
+        ),
+    }
+    persona = persona_map.get(role_category, persona_map["technical"])
+
+    # Role-specific question type guidance
+    question_guidance_map = {
+        "technical": (
+            "Ask questions about specific technologies, programming concepts, tools, and frameworks "
+            "listed in the JD. For example, if the JD says 'React', ask about hooks, state management, "
+            "or rendering patterns — NOT about system design or distributed systems unless those appear in the JD."
+        ),
+        "analytical": (
+            "Ask questions about data handling, SQL, statistical reasoning, BI tools, Python for data, "
+            "or whichever analytical skills appear in the JD. Ask scenario-based questions "
+            "like 'How would you approach this data problem?' — not coding or architecture questions."
+        ),
+        "non-technical": (
+            "Ask situational and behavioural questions based on the JD responsibilities. "
+            "For example: 'Tell me about a time you handled X.' or 'How would you approach Y scenario?' "
+            "Do NOT ask any technical, coding, or system design questions."
+        ),
+    }
+    question_guidance = question_guidance_map.get(role_category, question_guidance_map["technical"])
+
     return (
-        "You are a strict, professional senior software engineer conducting a technical interview.\n"
+        f"{persona}\n"
         "YOU MUST ALWAYS SPEAK ENGLISH. Do not speak any other language.\n\n"
         "=== INTERVIEW PARAMETERS ===\n"
         f"Difficulty: {iv.difficulty}\n"
         f"Duration: {iv.duration_min} minutes\n"
-        f"CORE INTERVIEW TOPIC / JOB DESCRIPTION: \"{iv.jd_text}\"\n"
-        f"KEY TECHNICAL SKILLS TO ASSESS: [{skills_list}]\n\n"
-        "=== STRICT RULES — YOU MUST FOLLOW ALL OF THESE ===\n\n"
-        "RULE 1: You must dynamically generate technical questions based EXACTLY on the 'CORE INTERVIEW TOPIC / JOB DESCRIPTION' and 'KEY TECHNICAL SKILLS' listed above. "
-        "Under NO CIRCUMSTANCES should you ask generic questions (e.g., 'tell me about a time...', 'what are your strengths') "
-        "or technical questions outside the scope of the provided topic.\n\n"
-        "RULE 2: Before asking any question, internally verify: 'Does this question directly test the candidate's knowledge of the specified topic?' "
-        "If it doesn't, YOU MUST NOT ASK IT.\n\n"
-        "RULE 3: Track which requirements have been covered. Do NOT move to the next topic until the "
-        "current one is sufficiently explored or the candidate explicitly passes.\n\n"
-        "RULE 4: For follow-up questions, ONLY probe deeper into the candidate's previous answer to test technical depth. "
+        f"JOB DESCRIPTION: \"{iv.jd_text}\"\n"
+        f"KEY SKILLS/COMPETENCIES TO ASSESS: [{skills_list}]\n\n"
+        "=== QUESTION RULES ===\n\n"
+        f"RULE 1 — SCOPE: {question_guidance}\n\n"
+        "RULE 2 — VERIFICATION: Before asking any question, internally verify: "
+        "'Does this question directly test a skill or responsibility explicitly listed in the JD above?' "
+        "If the answer is NO, you MUST NOT ask it.\n\n"
+        "RULE 3 — NO SYSTEM DESIGN BY DEFAULT: Unless the words 'system design', 'architecture', "
+        "'scalability', 'distributed', or 'microservices' appear explicitly in the JD, "
+        "you must NEVER ask questions about those topics.\n\n"
+        "RULE 4 — COVERAGE: Track which JD skills have been covered. "
+        "Move to the next skill only after the current one is sufficiently explored.\n\n"
+        "RULE 5 — FOLLOW-UPS: Follow-up questions must probe deeper into the candidate's last answer. "
         "Do NOT introduce new unrelated topics in a follow-up.\n\n"
-        "RULE 5: Keep questions concise (1-2 sentences). Ask ONE question at a time. "
-        "NEVER ask compound questions.\n\n"
-        "RULE 6: If the candidate's answer is unclear, ask ONE targeted clarifying question before moving on.\n\n"
-        "RULE 7: Do NOT provide answers, hints, or correctness feedback. "
+        "RULE 6 — CONCISENESS: Keep questions to 1-2 sentences. Ask ONE question at a time. "
+        "Never ask compound questions.\n\n"
+        "RULE 7 — NO FEEDBACK: Do NOT provide answers, hints, or correctness feedback. "
         "Never say 'That is correct' or 'Actually, the answer is...'\n\n"
-        "RULE 8: If the candidate goes off-topic, politely interrupt and redirect them to the technical question ONCE. "
-        "If they go off-topic again, move to the next requirement.\n\n"
-        "RULE 9: NEVER fabricate facts about the company or role.\n\n"
-        "RULE 10: End the interview after all requirements are covered or when time runs out.\n\n"
-        "RULE 11 — 3-STRIKES RULE: If the candidate has been unable to provide a meaningful answer to THREE consecutive questions "
-        "(very short, blank, or completely off-topic responses), you MUST close the interview immediately. "
+        "RULE 8 — REDIRECTION: If the candidate goes off-topic, politely redirect them once. "
+        "If they go off-topic again, move on.\n\n"
+        "RULE 9 — 3-STRIKES: If the candidate gives three consecutive very short, blank, "
+        "or completely off-topic responses, close the interview immediately. "
         "Say: 'Thank you for your time. Unfortunately, we were unable to complete enough of the assessment today.' "
         "Then append exactly: [INTERVIEW_COMPLETE]\n\n"
-        "RULE 12 — CANDIDATE REQUESTS TO END: If the candidate explicitly asks to end, stop, or finish the interview "
-        "(e.g., 'I want to stop', 'end the interview', 'I'm done'), you MUST comply immediately. "
+        "RULE 10 — CANDIDATE REQUESTS TO END: If the candidate explicitly asks to end the interview, comply. "
         "Say: 'Of course, thank you for your time today. The interview is now concluded.' "
         "Then append exactly: [INTERVIEW_COMPLETE]\n\n"
         "=== BEHAVIOR ===\n"
-        "- Start by introducing yourself briefly (1 sentence), then immediately ask the FIRST technical question targeting the first requirement.\n"
-        "- Keep all your replies short and direct (1-3 sentences max).\n"
-        "- Maintain a highly professional, focused, and objective tone.\n"
+        "- Start by introducing yourself in ONE brief sentence, then immediately ask the FIRST question.\n"
+        "- Keep all replies short and direct (1-3 sentences max).\n"
+        "- Maintain a professional, focused, and objective tone throughout.\n"
     )
 
 
@@ -125,7 +168,13 @@ async def _auto_complete_interview(iid: str, db) -> None:
     transcript = "\n".join(f"{m.role}: {m.text}" for m in msgs)
     state = json.loads(iv.state_json or "{}")
     try:
-        rubric = await llm.generate_report(transcript, state.get("jd_skills", []))
+        rubric = await llm.generate_report(
+            transcript=transcript,
+            jd_skills=state.get("jd_skills", []),
+            role_category=state.get("role_category", "technical"),
+            started_at=iv.started_at,
+            ended_at=datetime.utcnow(),
+        )
         md = llm.render_report_md(rubric)
         rep = ReportModel(interview_id=iid, rubric_json=rubric.model_dump_json(), report_md=md)
         db.add(rep)
@@ -134,6 +183,7 @@ async def _auto_complete_interview(iid: str, db) -> None:
     iv.status = "completed"
     iv.ended_at = datetime.utcnow()
     db.commit()
+
 
 @router.post("/interviews/{iid}/complete")
 async def complete(iid: str, user: User = Depends(current_user),
@@ -145,12 +195,19 @@ async def complete(iid: str, user: User = Depends(current_user),
     msgs = db.query(Message).filter(Message.interview_id == iid).order_by(Message.ts).all()
     transcript = "\n".join(f"{m.role}: {m.text}" for m in msgs)
     state = json.loads(iv.state_json or "{}")
-    rubric = await llm.generate_report(transcript, state.get("jd_skills", []))
+    rubric = await llm.generate_report(
+        transcript=transcript,
+        jd_skills=state.get("jd_skills", []),
+        role_category=state.get("role_category", "technical"),
+        started_at=iv.started_at,
+        ended_at=datetime.utcnow(),
+    )
     md = llm.render_report_md(rubric)
     rep = Report(interview_id=iid, rubric_json=rubric.model_dump_json(), report_md=md)
     db.add(rep)
     iv.status = "completed"; iv.ended_at = datetime.utcnow(); db.commit()
     return {"report_md": md}
+
 
 @router.get("/interviews")
 def list_interviews(user: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -158,6 +215,7 @@ def list_interviews(user: User = Depends(current_user), db: Session = Depends(ge
         .order_by(Interview.created_at.desc()).all()
     return [{"id": r.id, "status": r.status, "duration_min": r.duration_min,
              "difficulty": r.difficulty, "created_at": r.created_at.isoformat()} for r in rows]
+
 
 @router.get("/interviews/{iid}/report")
 def get_report(iid: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -170,7 +228,8 @@ def get_report(iid: str, user: User = Depends(current_user), db: Session = Depen
     if not rep:
         raise HTTPException(404, "No report yet")
     state = json.loads(iv.state_json or "{}")
-    return {"report_md": rep.report_md, "title": state.get("title", "Technical Interview")}
+    return {"report_md": rep.report_md, "title": state.get("title", "Interview")}
+
 
 @router.delete("/interviews/{iid}")
 def delete_interview(iid: str, user: User = Depends(current_user), db: Session = Depends(get_db)):

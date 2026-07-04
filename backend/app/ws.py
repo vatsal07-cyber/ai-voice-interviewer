@@ -54,8 +54,9 @@ async def control(
 
         state = json.loads(iv.state_json or "{}")
 
-        # Get system instructions
-        instructions = _interviewer_instructions(iv, state.get("jd_skills", []))
+        # Get system instructions (role-aware)
+        role_category = state.get("role_category", "technical")
+        instructions = _interviewer_instructions(iv, state.get("jd_skills", []), role_category)
 
         # Initial greeting if no messages
         msgs = db.query(Message).filter(Message.interview_id == iid).order_by(Message.ts).all()
