@@ -1,8 +1,12 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+import os
 
 # .env lives at project root: backend/app/config.py -> ../../.env
 _env_file = Path(__file__).resolve().parent.parent.parent / ".env"
+
+load_dotenv(_env_file)
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -13,7 +17,7 @@ class Settings(BaseSettings):
     # --- core ---
     app_secret: str = "change-me"           # signs session tokens
     database_url: str                       # REQUIRED — must be set in .env as DATABASE_URL
-    frontend_origin: str = "http://localhost:5173"
+    frontend_origin: str = os.getenv("FRONTEND_ORIGIN") | "http://localhost:5173"
 
     # --- groq (STT, LLM, TTS) ---
     groq_api_key: str = ""
