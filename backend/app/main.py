@@ -7,9 +7,7 @@ from .ws import ws_router
 
 app = FastAPI(title="AI Voice Interviewer")
 
-origins = [origin.strip() for origin in settings.frontend_origin.split(",")]
-if "https://yash-gupta-7.github.io" not in origins:
-    origins.append("https://yash-gupta-7.github.io")
+origins = [origin.strip() for origin in settings.frontend_origin.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
