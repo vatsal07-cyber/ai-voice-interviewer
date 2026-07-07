@@ -6,6 +6,12 @@ By simply pasting a Job Description (JD), the platform dynamically extracts the 
 
 ![AI Voice Interviewer](https://img.shields.io/badge/Status-Active-success) ![License](https://img.shields.io/badge/License-MIT-blue)
 
+## 🌐 Live Deployment
+
+- **Backend (API & WebSockets):** Deployed on [Render](https://render.com/) at `https://ai-voice-interviewer-9da9.onrender.com`
+- **Database:** Hosted on [Supabase](https://supabase.com/)
+- **Frontend:** Deployed on [GitHub Pages](https://pages.github.com/) at `https://yash-gupta-7.github.io/`
+
 ## ✨ Features
 
 - **Voice-to-Voice Realtime WebSockets:** Low-latency conversational architecture using WebRTC/Web Audio APIs and FastAPI WebSockets.
