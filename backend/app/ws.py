@@ -60,6 +60,12 @@ async def control(
 
         # Initial greeting if no messages
         msgs = db.query(Message).filter(Message.interview_id == iid).order_by(Message.ts).all()
+        # In-memory conversation for this session: the LLM needs full history
+        # even when save_transcript=False (no Message rows exist in that mode).
+        history = [
+            {"role": "assistant" if m.role == "interviewer" else "user", "content": m.text}
+            for m in msgs
+        ]
         if not msgs:
             # Generate the first message proactively
             initial_prompt = [{"role": "system", "content": instructions}, {"role": "user", "content": "Hello, I am ready to begin the interview."}]
@@ -67,9 +73,11 @@ async def control(
                 ai_text = await generate_chat_response_groq(initial_prompt)
                 ai_audio = await synthesize_speech_groq(ai_text)
                 
-                db.add(Message(interview_id=iid, role="interviewer", text=ai_text, ts=datetime.utcnow()))
-                db.commit()
-                
+                if iv.save_transcript:
+                    db.add(Message(interview_id=iid, role="interviewer", text=ai_text, ts=datetime.utcnow()))
+                    db.commit()
+                history.append({"role": "assistant", "content": ai_text})
+
                 await ws.send_text(json.dumps({
                     "type": "ai_response",
                     "text": ai_text,
@@ -112,6 +120,7 @@ async def control(
                 # Save candidate text
                 if iv.save_transcript:
                     db.add(Message(interview_id=iid, role="candidate", text=candidate_text, ts=datetime.utcnow()))
+                history.append({"role": "user", "content": candidate_text})
 
                 state = record_turn(state, "candidate", candidate_text)
                 state = advance(state, elapsed, candidate_text)  # pass text for blank-detection
@@ -128,19 +137,16 @@ async def control(
                     "candidate_text": candidate_text, # send back what we transcribed
                 }))
 
-                # 2. Generate LLM response
-                msgs = db.query(Message).filter(Message.interview_id == iid).order_by(Message.ts).all()
+                # 2. Generate LLM response from the in-memory history
                 chat_history = [{"role": "system", "content": instructions}]
-                
+
                 # Add context about the current phase / objective from the state engine
                 chat_history.append({
-                    "role": "system", 
+                    "role": "system",
                     "content": f"CURRENT PHASE: {state['phase']}\nYOUR NEXT OBJECTIVE: {state['next_objective']}"
                 })
-                
-                for m in msgs:
-                    role = "assistant" if m.role == "interviewer" else "user"
-                    chat_history.append({"role": role, "content": m.text})
+
+                chat_history.extend(history)
 
                 try:
                     ai_text = await generate_chat_response_groq(chat_history)
@@ -151,7 +157,8 @@ async def control(
                     
                     if iv.save_transcript:
                         db.add(Message(interview_id=iid, role="interviewer", text=spoken_text, ts=datetime.utcnow()))
-                    
+                    history.append({"role": "assistant", "content": spoken_text})
+
                     state = record_turn(state, "interviewer", spoken_text)
                     iv.state_json = json.dumps(state)
                     db.commit()
@@ -165,9 +172,14 @@ async def control(
                     # --- Auto-end detection ---
                     # End if the state engine forced it OR the LLM included the sentinel
                     if state.get("next_move") == "force_end" or "[INTERVIEW_COMPLETE]" in ai_text:
-                        # Auto-complete server-side
+                        # Auto-complete server-side (pass in-memory transcript so
+                        # save_transcript=False interviews still get a report)
                         from .routes import _auto_complete_interview
-                        await _auto_complete_interview(iid, db)
+                        session_transcript = "\n".join(
+                            f"{'interviewer' if h['role'] == 'assistant' else 'candidate'}: {h['content']}"
+                            for h in history
+                        )
+                        await _auto_complete_interview(iid, db, transcript=session_transcript)
                         await ws.send_text(json.dumps({"type": "interview_ended"}))
                         break  # exit the while loop; WebSocket will close naturally
 

@@ -17,7 +17,8 @@ function ProtectedRoute({ element }: { element: JSX.Element }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    // basename keeps routes aligned with Vite's base (/ai-voice-interviewer/ on GH Pages, / in dev)
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Routes>
         {/* Public routes — no navbar */}
         <Route path="/" element={<LandingPage />} />

@@ -158,14 +158,15 @@ def _interviewer_instructions(iv: Interview, skills: list, role_category: str = 
     )
 
 
-async def _auto_complete_interview(iid: str, db) -> None:
+async def _auto_complete_interview(iid: str, db, transcript: str | None = None) -> None:
     """Internal helper called by ws.py to complete an interview without an HTTP request."""
     from .models import Report as ReportModel
     iv = db.query(Interview).filter(Interview.id == iid).first()
     if not iv or iv.status == "completed":
         return
-    msgs = db.query(Message).filter(Message.interview_id == iid).order_by(Message.ts).all()
-    transcript = "\n".join(f"{m.role}: {m.text}" for m in msgs)
+    if transcript is None:
+        msgs = db.query(Message).filter(Message.interview_id == iid).order_by(Message.ts).all()
+        transcript = "\n".join(f"{m.role}: {m.text}" for m in msgs)
     state = json.loads(iv.state_json or "{}")
     try:
         rubric = await llm.generate_report(

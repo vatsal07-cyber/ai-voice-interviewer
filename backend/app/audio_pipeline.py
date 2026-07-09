@@ -49,14 +49,21 @@ async def generate_chat_response_groq(messages: List[Dict[str, str]]) -> str:
             raise ValueError(f"Groq LLM error {r.status_code}: {r.text}")
         return r.json()["choices"][0]["message"]["content"]
 
-async def synthesize_speech_groq(text: str) -> bytes:
-    """Generate audio from text using gTTS (unlimited, no API key)."""
+def _gtts_synth(text: str) -> bytes:
     from gtts import gTTS
     import io
-    
-    # Run gTTS synchronously in a thread (though it's fast enough we can just do it inline here for now)
-    tts = gTTS(text=text, lang='en', tld='us') # US English accent
+
+    tts = gTTS(text=text, lang='en', tld='us')  # US English accent
     fp = io.BytesIO()
     tts.write_to_fp(fp)
-    fp.seek(0)
-    return fp.read()
+    return fp.getvalue()
+
+
+async def synthesize_speech_groq(text: str) -> bytes:
+    """Generate audio from text using gTTS (unlimited, no API key).
+
+    gTTS makes a blocking HTTP call to Google; run it in a thread so one
+    user's TTS doesn't stall the event loop for every other connected user.
+    """
+    import asyncio
+    return await asyncio.to_thread(_gtts_synth, text)
