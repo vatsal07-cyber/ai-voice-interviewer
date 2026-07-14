@@ -24,7 +24,10 @@ async def transcribe_audio_groq(audio_bytes: bytes, filename="audio.webm") -> st
         "language": "en",  # Force English transcription; non-English speech will be translated
     }
     
-    async with httpx.AsyncClient(timeout=30) as client:
+    # Full candidate turns (VAD-recorded, can run 30-90s of audio) take Groq
+    # a while to transcribe; 30s was cutting off in-flight requests (client
+    # disconnect => empty-message TimeoutException, Groq logs it as HTTP 499).
+    async with httpx.AsyncClient(timeout=90) as client:
         r = await client.post(GROQ_AUDIO_URL, headers=headers, data=data, files=files)
         if not r.is_success:
             raise ValueError(f"Groq STT error {r.status_code}: {r.text}")

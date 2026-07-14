@@ -104,7 +104,7 @@ async def control(
                     audio_bytes = base64.b64decode(audio_b64)
                     candidate_text = await transcribe_audio_groq(audio_bytes)
                 except Exception as e:
-                    print(f"[ws] STT error: {e}")
+                    print(f"[ws] STT error: {type(e).__name__}: {e}")
                     await ws.send_text(json.dumps({"type": "error", "message": "Failed to transcribe audio"}))
                     continue
 
@@ -184,7 +184,7 @@ async def control(
                         break  # exit the while loop; WebSocket will close naturally
 
                 except Exception as e:
-                    print(f"[ws] LLM/TTS error: {e}")
+                    print(f"[ws] LLM/TTS error: {type(e).__name__}: {e}")
                     await ws.send_text(json.dumps({"type": "error", "message": "Failed to generate AI response"}))
 
     except WebSocketDisconnect:
