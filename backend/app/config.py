@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # --- groq (STT, LLM, TTS) ---
     groq_api_key: str = ""
     model: str = "whisper-large-v3-turbo"    # STT model
-    groq_llm_model: str = "llama-3.3-70b-versatile"
+    groq_llm_model: str = "openai/gpt-oss-120b"
 
     # --- guardrails ---
     max_interviews_per_user_per_day: int = 5
