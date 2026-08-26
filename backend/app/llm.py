@@ -15,7 +15,13 @@ MIN_INTERVIEW_SEC = 90       # interview must have run for at least 90 seconds
 
 async def _chat(messages: list, json_mode: bool = False) -> str:
     headers = {"Authorization": f"Bearer {settings.groq_api_key}"}
-    body = {"model": settings.groq_llm_model, "messages": messages, "temperature": 0.2}
+    body = {
+        "model": settings.groq_llm_model,
+        "messages": messages,
+        "temperature": 0.2,
+        "reasoning_format": "hidden",  # gpt-oss is a reasoning model; keep chain-of-thought
+                                        # out of content so json.loads(out) doesn't choke on it
+    }
     if json_mode:
         body["response_format"] = {"type": "json_object"}
     async with httpx.AsyncClient(timeout=60) as client:

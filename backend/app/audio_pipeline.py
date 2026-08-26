@@ -43,10 +43,15 @@ async def generate_chat_response_groq(messages: List[Dict[str, str]]) -> str:
         "model": settings.groq_llm_model,
         "messages": messages,
         "temperature": 0.7,
-        "max_tokens": 150 # keep responses concise for voice
+        "max_tokens": 400,       # gpt-oss is a reasoning model; 150 was too tight
+                                 # once reasoning tokens are counted, causing empty/
+                                 # truncated replies that tripped the 3-blank-answer
+                                 # auto-end after a few turns
+        "reasoning_effort": "low",
+        "reasoning_format": "hidden",  # keep chain-of-thought out of spoken content
     }
     
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=60) as client:  # gpt-oss reasons before answering; 30s was too tight
         r = await client.post(GROQ_CHAT_URL, headers=headers, json=body)
         if not r.is_success:
             raise ValueError(f"Groq LLM error {r.status_code}: {r.text}")

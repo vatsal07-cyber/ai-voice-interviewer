@@ -78,7 +78,11 @@ export default function LiveInterview() {
         try {
           const data = JSON.parse(e.data);
           if (data.type === "error") {
-            onError(data.message);
+            // A single turn failed (STT/LLM/TTS hiccup) — the backend session is
+            // still alive and waiting for the next turn, so retry instead of
+            // ending the whole interview over one transient error.
+            console.warn("[interview] turn error, retrying:", data.message);
+            if (!cancelledRef.current) startListening();
           } else if (data.type === "interview_ended") {
             // Backend auto-completed the interview (3 strikes or user request)
             cancelledRef.current = true;
