@@ -43,19 +43,29 @@ async def generate_chat_response_groq(messages: List[Dict[str, str]]) -> str:
         "model": settings.groq_llm_model,
         "messages": messages,
         "temperature": 0.7,
-        "max_tokens": 400,       # gpt-oss is a reasoning model; 150 was too tight
-                                 # once reasoning tokens are counted, causing empty/
-                                 # truncated replies that tripped the 3-blank-answer
-                                 # auto-end after a few turns
+        # gpt-oss is a reasoning model: its hidden chain-of-thought is still
+        # billed against max_tokens even with reasoning_format=hidden, so 150
+        # (and even 400) was getting fully consumed by reasoning before any
+        # answer text was written, coming back as empty content every turn.
+        "max_tokens": 1200,
         "reasoning_effort": "low",
         "reasoning_format": "hidden",  # keep chain-of-thought out of spoken content
     }
-    
+
     async with httpx.AsyncClient(timeout=60) as client:  # gpt-oss reasons before answering; 30s was too tight
         r = await client.post(GROQ_CHAT_URL, headers=headers, json=body)
         if not r.is_success:
             raise ValueError(f"Groq LLM error {r.status_code}: {r.text}")
-        return r.json()["choices"][0]["message"]["content"]
+        data = r.json()
+        choice = data["choices"][0]
+        content = choice["message"]["content"] or ""
+        if not content.strip():
+            # Diagnostic: if this fires, reasoning is still eating the whole
+            # budget (finish_reason will read "length") and max_tokens needs
+            # to go up further, or reasoning_effort needs to drop more.
+            print(f"[llm] empty content from {settings.groq_llm_model}, "
+                  f"finish_reason={choice.get('finish_reason')}, usage={data.get('usage')}")
+        return content
 
 def _gtts_synth(text: str) -> bytes:
     from gtts import gTTS

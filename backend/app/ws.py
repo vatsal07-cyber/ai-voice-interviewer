@@ -152,8 +152,13 @@ async def control(
                     ai_text = await generate_chat_response_groq(chat_history)
                     # Strip the sentinel token from the spoken text before TTS
                     spoken_text = ai_text.replace("[INTERVIEW_COMPLETE]", "").strip()
+                    if not spoken_text:
+                        # Empty LLM reply — keep transcript/history/audio in sync by
+                        # using the same re-ask text everywhere instead of storing ""
+                        print(f"[ws] empty LLM reply for interview {iid}; falling back to a re-ask")
+                        spoken_text = "Sorry, could you say that again?"
                     # 3. Generate TTS
-                    ai_audio_bytes = await synthesize_speech_groq(spoken_text if spoken_text else "Thank you for your time. The interview is now complete.")
+                    ai_audio_bytes = await synthesize_speech_groq(spoken_text)
                     
                     if iv.save_transcript:
                         db.add(Message(interview_id=iid, role="interviewer", text=spoken_text, ts=datetime.utcnow()))
