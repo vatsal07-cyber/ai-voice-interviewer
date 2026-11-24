@@ -104,3 +104,11 @@ docker-compose up --build -d
 ## 🛡️ License
 
 This project is licensed under the MIT License.
+## Project Objectives
+
+- Provide an interactive AI-powered mock interview experience.
+- Improve candidates' communication and technical skills.
+- Generate role-specific interview questions.
+- Enable real-time voice-based interaction.
+- Provide personalized feedback and study recommendations.
+- Help candidates prepare for real-world job interviews.
