@@ -31,3 +31,19 @@ frontend/.vite/
 .vscode/
 .idea/
 *.swp
+# Additional local environment files
+.env.*.local
+
+# Python virtual environments
+.venv/
+
+# Log files
+*.log
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Private keys
+*.pem
+*.key
