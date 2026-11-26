@@ -112,3 +112,53 @@ This project is licensed under the MIT License.
 - Enable real-time voice-based interaction.
 - Provide personalized feedback and study recommendations.
 - Help candidates prepare for real-world job interviews.
+## macOS Setup Guide
+
+### Prerequisites
+
+- Git
+- Python 3
+- Node.js and npm
+- Visual Studio Code (optional)
+- Groq API key
+- PostgreSQL database
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/vatsal07-cyber/ai-voice-interviewer.git
+cd ai-voice-interviewer
+```
+
+### Backend Dependency Setup
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Frontend Setup
+
+Open a separate terminal from the project root:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Environment Configuration
+
+- Configure the required backend environment variables before starting the backend.
+- Use the local backend API URL during development.
+- Configure the production API URL through Vercel.
+- Never commit API keys or database credentials to GitHub.
+
+### Deployment Platforms
+
+- Frontend: Vercel
+- Backend: Render
+- Database: Supabase
+- AI Integration: Groq API
